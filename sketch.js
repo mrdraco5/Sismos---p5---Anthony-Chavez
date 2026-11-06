@@ -1,39 +1,30 @@
 // DECLARACIONES
 
-// Dirección de los datos (sismos del último mes, M 2.5 o más)
 const URL_SISMOS =
   'https://earthquake.usgs.gov/earthquakes/feed/v1.0/' +
   'summary/2.5_month.geojson';
 
-// Respuesta completa del servidor (GeoJSON)
 let crudo;
-// Lista limpia: un objeto sencillo por cada sismo
 let sismos = [];
-// Ondas que se están animando en este momento
 let anillos = [];
-// Fecha del primer sismo y duración del periodo (en milisegundos)
 let t0, duracion;
-// Cuántos sismos ya "ocurrieron" en la animación
 let indice = 0;
-// Fecha simulada del cuadro anterior
 let ultimoAhora = 0;
-// Magnitud mínima que se dibuja y se escucha
 let magMin = 5;
-// Botón de sonido, oscilador, envolvente y estado del audio
+
+// Variables de interfaz y sonido
 let botonSonido, osc, env;
 let sonidoActivo = false;
+let sliderMag;
 
-// CARGA DE DATOS (se ejecuta antes que setup)
 function preload() {
   crudo = loadJSON(URL_SISMOS);
 }
 
-// FUNCIÓN DE CONFIGURACIÓN
 function setup() {
   let ancho = min(windowWidth, 1000);
   createCanvas(ancho, ancho / 2);
 
-  // Convierte cada elemento del GeoJSON en un objeto sencillo
   sismos = crudo.features
     .map(f => ({
       lon: f.geometry.coordinates[0],
@@ -43,40 +34,42 @@ function setup() {
       lugar: f.properties.place,
       t: f.properties.time
     }))
-    .filter(s => s.mag !== null)  // quita registros sin magnitud
-    .sort((a, b) => a.t - b.t);   // del más antiguo al más nuevo
+    .filter(s => s.mag !== null)
+    .sort((a, b) => a.t - b.t);
 
-  // Fecha del primer sismo y duración total del periodo
   t0 = sismos[0].t;
   duracion = sismos[sismos.length - 1].t - t0;
 
-  // Botón para activar el sonido
   botonSonido = createButton('Activar sonido');
   botonSonido.mousePressed(alternarSonido);
 
-  // Oscilador de onda seno controlado por una envolvente
-  osc = new p5.Oscillator('sine');
+  // RETO 1
+  sliderMag = createSlider(2.5, 8, magMin, 0.1);
+  // movido a 130 en el eje X para que no se superponga con el botón
+  sliderMag.position(130, height + 10);
+
+  // RETO 3
+  osc = new p5.Oscillator('triangle'); 
   env = new p5.Envelope();
   env.setADSR(0.01, 0.15, 0.1, 0.4);
   env.setRange(0.4, 0);
   osc.amp(env);
 }
 
-// FUNCIÓN DONDE SE PROGRAMA LA ANIMACIÓN
 function draw() {
   background(10, 12, 30);
   dibujarCuadricula();
 
-  // Reloj simulado: el mes completo dura 60 segundos reales
+  // RETO 1: Leer el valor del slider en tiempo real
+  magMin = sliderMag.value();
+
   let ahora = t0 + (millis() * duracion / 60000) % duracion;
   if (ahora < ultimoAhora) {
-    // Empezó otra vuelta: se reinicia la animación
     indice = 0;
     anillos = [];
   }
   ultimoAhora = ahora;
 
-  // Dispara los sismos cuya fecha ya llegó
   while (indice < sismos.length && sismos[indice].t <= ahora) {
     let s = sismos[indice];
     indice++;
@@ -86,7 +79,6 @@ function draw() {
     }
   }
 
-  // Puntos permanentes: sismos que ya ocurrieron
   noStroke();
   for (let i = 0; i < indice; i++) {
     let s = sismos[i];
@@ -98,11 +90,10 @@ function draw() {
     circle(p.x, p.y, 3);
   }
 
-  // Ondas que crecen y se desvanecen en tres segundos
   noFill();
   for (let i = anillos.length - 1; i >= 0; i--) {
     let a = anillos[i];
-    let edad = (millis() - a.nacio) / 3000;  // va de 0 a 1
+    let edad = (millis() - a.nacio) / 3000;
     if (edad > 1) {
       anillos.splice(i, 1);
       continue;
@@ -115,17 +106,41 @@ function draw() {
     circle(p.x, p.y, tamano(a.s.mag) * (0.3 + 2 * edad));
   }
 
-  // Texto con la fecha simulada
+  // Textos de interfaz estáticos
   noStroke();
   fill(255);
   textSize(14);
   textAlign(LEFT, TOP);
   text(new Date(ahora).toLocaleDateString('es-CO'), 10, 10);
+  text('Filtro de magnitud: ' + magMin, 10, 30);
+
+  // RETO 2: Sismo más cercano al cursor
+  let sismoCercano = null;
+  let distanciaMinima = Infinity;
+
+  for (let i = 0; i < indice; i++) {
+    let s = sismos[i];
+    if (s.mag < magMin) continue;
+    let p = proyectar(s.lon, s.lat);
+    let d = dist(mouseX, mouseY, p.x, p.y); 
+    
+    if (d < distanciaMinima) {
+      distanciaMinima = d;
+      sismoCercano = s;
+    }
+  }
+
+  // Si encontramos uno y el cursor está relativamente cerca (a menos de 40 píxeles)
+  if (sismoCercano && distanciaMinima < 40) {
+    fill(255);
+    textSize(12);
+    textAlign(LEFT, BOTTOM);
+    // Se escriben los datos del sismo cerca del cursor
+    text(`${sismoCercano.lugar}\nMag: ${sismoCercano.mag}\nProf: ${sismoCercano.prof} km`, mouseX + 15, mouseY - 15);
+  }
 }
 
 // FUNCIONES AUXILIARES
-
-// Convierte longitud y latitud en posición dentro del lienzo
 function proyectar(lon, lat) {
   return {
     x: map(lon, -180, 180, 0, width),
@@ -133,18 +148,15 @@ function proyectar(lon, lat) {
   };
 }
 
-// Diámetro del círculo según la magnitud
 function tamano(mag) {
   return map(mag, 2.5, 8, 6, 80);
 }
 
-// Color según la profundidad: amarillo (cerca) a morado (lejos)
 function colorProfundidad(prof) {
   let f = constrain(prof / 300, 0, 1);
   return lerpColor(color('#ffd166'), color('#7b2cbf'), f);
 }
 
-// Líneas de referencia cada 30 grados
 function dibujarCuadricula() {
   stroke(255, 25);
   strokeWeight(1);
@@ -159,10 +171,7 @@ function dibujarCuadricula() {
 }
 
 // SONIDO
-
-// Activa o silencia el audio con el botón
 function alternarSonido() {
-  // El navegador exige un clic del usuario para permitir audio
   userStartAudio();
   sonidoActivo = !sonidoActivo;
   if (sonidoActivo) {
@@ -173,11 +182,9 @@ function alternarSonido() {
   botonSonido.html(sonidoActivo ? 'Silenciar' : 'Activar sonido');
 }
 
-// Hace sonar un sismo: más magnitud, tono más grave
 function sonar(s) {
   if (!sonidoActivo) return;
   osc.freq(map(s.mag, 2.5, 8, 880, 110));
-  // Izquierda o derecha según la longitud
   osc.pan(map(s.lon, -180, 180, -1, 1));
   env.play();
 }
