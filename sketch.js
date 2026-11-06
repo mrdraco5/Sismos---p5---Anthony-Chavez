@@ -45,7 +45,6 @@ function setup() {
 
   // RETO 1
   sliderMag = createSlider(2.5, 8, magMin, 0.1);
-  // movido a 130 en el eje X para que no se superponga con el botón
   sliderMag.position(130, height + 10);
 
   // RETO 3
@@ -130,7 +129,7 @@ function draw() {
     }
   }
 
-  // Si encontramos uno y el cursor está relativamente cerca (a menos de 40 píxeles)
+  // Si se encuentra uno y el cursor está relativamente cerca (a menos de 40 píxeles)
   if (sismoCercano && distanciaMinima < 40) {
     fill(255);
     textSize(12);
